@@ -1,20 +1,16 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { User } from '../entities/user.entity';
+import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { User } from '@prisma/client';
 
 @Injectable()
 export class UsersService {
-  constructor(
-    @InjectRepository(User)
-    private userRepository: Repository<User>,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   async create(createUserDto: CreateUserDto): Promise<User> {
     // Check if user with email already exists
-    const existingUser = await this.userRepository.findOne({
+    const existingUser = await this.prisma.user.findUnique({
       where: { email: createUserDto.email },
     });
 
@@ -22,18 +18,19 @@ export class UsersService {
       throw new ConflictException('User with this email already exists');
     }
 
-    const user = this.userRepository.create(createUserDto);
-    return await this.userRepository.save(user);
+    return await this.prisma.user.create({
+      data: createUserDto,
+    });
   }
 
   async findAll(): Promise<User[]> {
-    return await this.userRepository.find({
-      order: { createdAt: 'DESC' },
+    return await this.prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
     });
   }
 
   async findOne(id: number): Promise<User> {
-    const user = await this.userRepository.findOne({ where: { id } });
+    const user = await this.prisma.user.findUnique({ where: { id } });
     
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
@@ -43,7 +40,7 @@ export class UsersService {
   }
 
   async findByEmail(email: string): Promise<User> {
-    const user = await this.userRepository.findOne({ where: { email } });
+    const user = await this.prisma.user.findUnique({ where: { email } });
     
     if (!user) {
       throw new NotFoundException(`User with email ${email} not found`);
@@ -57,7 +54,7 @@ export class UsersService {
 
     // Check if email is being updated and if it already exists
     if (updateUserDto.email && updateUserDto.email !== user.email) {
-      const existingUser = await this.userRepository.findOne({
+      const existingUser = await this.prisma.user.findUnique({
         where: { email: updateUserDto.email },
       });
 
@@ -66,13 +63,17 @@ export class UsersService {
       }
     }
 
-    Object.assign(user, updateUserDto);
-    return await this.userRepository.save(user);
+    return await this.prisma.user.update({
+      where: { id },
+      data: updateUserDto,
+    });
   }
 
   async remove(id: number): Promise<void> {
-    const user = await this.findOne(id);
-    await this.userRepository.remove(user);
+    await this.findOne(id); // Check if user exists
+    await this.prisma.user.delete({
+      where: { id },
+    });
   }
 }
 
