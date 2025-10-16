@@ -2,31 +2,26 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AuthService } from '../auth.service';
 
 @Injectable()
-export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(
-    private configService: ConfigService,
-    private authService: AuthService,
-  ) {
+export class RefreshJwtStrategy extends PassportStrategy(Strategy, 'refresh-jwt') {
+  constructor(private configService: ConfigService) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('JWT_SECRET') || 'your-super-secret-jwt-key-change-this-in-production',
+      secretOrKey: configService.get<string>('REFRESH_JWT_SECRET') || '',
     });
   }
 
   async validate(payload: any) {
-    // Check if it's an access token
-    if (payload.type !== 'access') {
+    // Check if it's a refresh token
+    if (payload.type !== 'refresh') {
       throw new UnauthorizedException('Invalid token type');
     }
 
     return { 
-      userId: payload.sub, 
-      email: payload.email,
-      name: payload.name 
+      userId: payload.sub,
+      type: payload.type
     };
   }
 }
