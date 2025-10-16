@@ -3,9 +3,9 @@ import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
+import * as argon2 from 'argon2';
 
-// Simple in-memory blacklist (use Redis in production)
-const tokenBlacklist = new Set<string>();
+// We'll use database storage instead of in-memory blacklist
 
 @Injectable()
 export class AuthService {
@@ -58,6 +58,13 @@ export class AuthService {
   async login(user: any) {
     const tokens = this.generateTokens(user);
     
+    // Hash and store the refresh token in database
+    const hashedRefreshToken = await argon2.hash(tokens.refresh_token);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken: hashedRefreshToken },
+    });
+    
     return {
       message: 'Login successful',
       ...tokens,
@@ -71,11 +78,6 @@ export class AuthService {
     try {
       // Verify the refresh token using the refresh JWT service
       const payload = this.refreshJwtService.verify(refreshToken);
-      
-      // Check if token is blacklisted
-      if (tokenBlacklist.has(refreshToken)) {
-        throw new Error('Token has been revoked');
-      }
 
       // Check if it's actually a refresh token
       if (payload.type !== 'refresh') {
@@ -91,11 +93,20 @@ export class AuthService {
         throw new Error('User not found');
       }
 
-      // Blacklist the old refresh token
-      tokenBlacklist.add(refreshToken);
+      // Check if the refresh token matches the stored hashed token
+      if (!user.refreshToken || !await argon2.verify(user.refreshToken, refreshToken)) {
+        throw new Error('Invalid refresh token');
+      }
 
       // Generate new tokens
       const tokens = this.generateTokens(user);
+
+      // Hash and store the new refresh token
+      const hashedRefreshToken = await argon2.hash(tokens.refresh_token);
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { refreshToken: hashedRefreshToken },
+      });
 
       return {
         message: 'Token refreshed successfully',
@@ -110,12 +121,20 @@ export class AuthService {
   }
 
   async logout(token: string) {
-    // Add token to blacklist
-    tokenBlacklist.add(token);
-    return { message: 'Logged out successfully' };
-  }
-
-  isTokenBlacklisted(token: string): boolean {
-    return tokenBlacklist.has(token);
+    try {
+      // Verify the token to get user ID
+      const payload = this.jwtService.verify(token);
+      
+      // Clear the refresh token from database
+      await this.prisma.user.update({
+        where: { id: payload.sub },
+        data: { refreshToken: null },
+      });
+      
+      return { message: 'Logged out successfully' };
+    } catch (error) {
+      // If token is invalid, still return success (user is effectively logged out)
+      return { message: 'Logged out successfully' };
+    }
   }
 }
