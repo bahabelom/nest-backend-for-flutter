@@ -2,6 +2,9 @@ import { Injectable, Inject, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { UserPayloadDto } from './dto/user-payload.dto';
+import { JwtPayloadDto } from './dto/jwt-payload.dto';
+import { UserWithRole } from '../common/types/user-with-role.type';
 import * as bcrypt from 'bcrypt';
 import * as argon2 from 'argon2';
 
@@ -16,31 +19,32 @@ export class AuthService {
     @Inject('REFRESH_JWT_SERVICE') private refreshJwtService: JwtService,
   ) {}
 
-  async validateUser(email: string, password: string): Promise<any> {
+  async validateUser(email: string, password: string): Promise<UserPayloadDto | null> {
     const user = await this.prisma.user.findUnique({
       where: { email },
-    });
+    }) as UserWithRole | null;
 
     if (user && await bcrypt.compare(password, user.password)) {
       const { password: _, ...result } = user;
-      return result;
+      return result as UserPayloadDto;
     }
     return null;
   }
 
-  generateAccessToken(user: any): string {
-    const payload = { 
+  generateAccessToken(user: UserPayloadDto): string {
+    const payload: JwtPayloadDto = { 
       email: user.email, 
       sub: user.id, 
       name: user.name,
+      role: user.role,
       type: 'access'
     };
     
     return this.jwtService.sign(payload);
   }
 
-  generateRefreshToken(user: any): string {
-    const payload = { 
+  generateRefreshToken(user: UserPayloadDto): string {
+    const payload: Partial<JwtPayloadDto> = { 
       sub: user.id,
       type: 'refresh'
     };
@@ -48,14 +52,14 @@ export class AuthService {
     return this.refreshJwtService.sign(payload);
   }
 
-  generateTokens(user: any) {
+  generateTokens(user: UserPayloadDto) {
     return {
       access_token: this.generateAccessToken(user),
       refresh_token: this.generateRefreshToken(user),
     };
   }
 
-  async login(user: any) {
+  async login(user: UserPayloadDto) {
     const tokens = this.generateTokens(user);
     
     // Hash and store the refresh token in database
@@ -71,19 +75,14 @@ export class AuthService {
       expires_in: 900, // 15 minutes in seconds
       id: user.id,
       email: user.email,
+      role: user.role ,
     };
   }
 
-  async validateRefreshToken(userId: number) {
+  async validateRefreshToken(userId: number): Promise<UserPayloadDto> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        refreshToken: true,
-      },
-    });
+    }) as UserWithRole | null;
 
     if (!user?.refreshToken) {
       throw new UnauthorizedException('Invalid refresh token');
@@ -93,19 +92,14 @@ export class AuthService {
       id: user.id,
       email: user.email,
       name: user.name,
+      role: user.role,
     };
   }
 
-  async verifyRefreshToken(userId: number, refreshToken: string) {
+  async verifyRefreshToken(userId: number, refreshToken: string): Promise<UserPayloadDto> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        refreshToken: true,
-      },
-    });
+    }) as UserWithRole | null;
 
     if (!user?.refreshToken) {
       throw new UnauthorizedException('Invalid refresh token');
@@ -115,10 +109,15 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    return user;
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    };
   }
 
-  async refreshToken(user: any) {
+  async refreshToken(user: UserPayloadDto) {
     // Generate new tokens
     const tokens = this.generateTokens(user);
 
