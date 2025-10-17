@@ -6,6 +6,7 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { RefreshJwtAuthGuard } from './guards/refresh-jwt-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { Public } from '../common/decorators/public.decorator';
 
 @Controller('auth')
 export class AuthController {
@@ -14,6 +15,7 @@ export class AuthController {
     private readonly usersService: UsersService,
   ) {}
 
+  @Public()
   @Post('register')
   async register(@Body() createUserDto: CreateUserDto) {
     const user = await this.usersService.create(createUserDto);
@@ -24,6 +26,7 @@ export class AuthController {
     };
   }
 
+  @Public()
   @HttpCode(HttpStatus.OK)
   @UseGuards(LocalAuthGuard)
   @Post('login')
@@ -31,6 +34,7 @@ export class AuthController {
     return this.authService.login(req.user);
   }
 
+  @Public()
   @HttpCode(HttpStatus.OK)
   @UseGuards(RefreshJwtAuthGuard)
   @Post('refresh')
@@ -46,7 +50,6 @@ export class AuthController {
   }
 
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
   @Post('logout')
   async logout(@Request() req) {
     return this.authService.logout(req.user.userId);
