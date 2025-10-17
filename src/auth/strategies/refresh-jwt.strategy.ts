@@ -2,10 +2,14 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AuthService } from '../auth.service';
 
 @Injectable()
 export class RefreshJwtStrategy extends PassportStrategy(Strategy, 'refresh-jwt') {
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    private authService: AuthService,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -19,9 +23,13 @@ export class RefreshJwtStrategy extends PassportStrategy(Strategy, 'refresh-jwt'
       throw new UnauthorizedException('Invalid token type');
     }
 
+    // Get user from database to validate they have a refresh token
+    const user = await this.authService.validateRefreshToken(payload.sub);
+
     return { 
       userId: payload.sub,
-      type: payload.type
+      type: payload.type,
+      user: user
     };
   }
 }

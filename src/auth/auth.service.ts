@@ -1,4 +1,4 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -74,67 +74,77 @@ export class AuthService {
     };
   }
 
-  async refreshToken(refreshToken: string) {
-    try {
-      // Verify the refresh token using the refresh JWT service
-      const payload = this.refreshJwtService.verify(refreshToken);
+  async validateRefreshToken(userId: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        refreshToken: true,
+      },
+    });
 
-      // Check if it's actually a refresh token
-      if (payload.type !== 'refresh') {
-        throw new Error('Invalid token type');
-      }
-
-      // Get user from database
-      const user = await this.prisma.user.findUnique({
-        where: { id: payload.sub },
-      });
-
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      // Check if the refresh token matches the stored hashed token
-      if (!user.refreshToken || !await argon2.verify(user.refreshToken, refreshToken)) {
-        throw new Error('Invalid refresh token');
-      }
-
-      // Generate new tokens
-      const tokens = this.generateTokens(user);
-
-      // Hash and store the new refresh token
-      const hashedRefreshToken = await argon2.hash(tokens.refresh_token);
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: { refreshToken: hashedRefreshToken },
-      });
-
-      return {
-        message: 'Token refreshed successfully',
-        ...tokens,
-        expires_in: 900, // 15 minutes in seconds
-        id: user.id,
-        email: user.email,
-      };
-    } catch (error) {
-      throw new Error('Invalid refresh token');
+    if (!user?.refreshToken) {
+      throw new UnauthorizedException('Invalid refresh token');
     }
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+    };
   }
 
-  async logout(token: string) {
-    try {
-      // Verify the token to get user ID
-      const payload = this.jwtService.verify(token);
-      
-      // Clear the refresh token from database
-      await this.prisma.user.update({
-        where: { id: payload.sub },
-        data: { refreshToken: null },
-      });
-      
-      return { message: 'Logged out successfully' };
-    } catch (error) {
-      // If token is invalid, still return success (user is effectively logged out)
-      return { message: 'Logged out successfully' };
+  async verifyRefreshToken(userId: number, refreshToken: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        refreshToken: true,
+      },
+    });
+
+    if (!user?.refreshToken) {
+      throw new UnauthorizedException('Invalid refresh token');
     }
+
+    if (!await argon2.verify(user.refreshToken, refreshToken)) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    return user;
+  }
+
+  async refreshToken(user: any) {
+    // Generate new tokens
+    const tokens = this.generateTokens(user);
+
+    // Hash and store the new refresh token
+    const hashedRefreshToken = await argon2.hash(tokens.refresh_token);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken: hashedRefreshToken },
+    });
+
+    return {
+      message: 'Token refreshed successfully',
+      ...tokens,
+      expires_in: 900, // 15 minutes in seconds
+      id: user.id,
+      email: user.email,
+    };
+  }
+
+  async logout(userId: number) {
+    // Clear the refresh token from database
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { refreshToken: null },
+    });
+    
+    return { message: 'Logged out successfully' };
   }
 }

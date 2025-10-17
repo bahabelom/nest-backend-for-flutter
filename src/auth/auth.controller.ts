@@ -1,11 +1,11 @@
-import { Controller, Post, Body, UseGuards, Request, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Request, HttpCode, HttpStatus, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { LogoutDto } from './dto/logout.dto';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { RefreshJwtAuthGuard } from './guards/refresh-jwt-auth.guard';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -35,16 +35,20 @@ export class AuthController {
   @UseGuards(RefreshJwtAuthGuard)
   @Post('refresh')
   async refresh(@Request() req) {
-    // Extract token from Authorization header
-    const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(' ')[1]; // Bearer <token>
+    const token = req.headers.authorization?.split(' ')[1];
     
-    return this.authService.refreshToken(token);
+    if (!token) {
+      throw new UnauthorizedException('No token provided');
+    }
+
+    const user = await this.authService.verifyRefreshToken(req.user.userId, token);
+    return this.authService.refreshToken(user);
   }
 
   @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
   @Post('logout')
-  async logout(@Body() logoutDto: LogoutDto) {
-    return this.authService.logout(logoutDto.token);
+  async logout(@Request() req) {
+    return this.authService.logout(req.user.userId);
   }
 }
