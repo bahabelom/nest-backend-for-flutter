@@ -72,7 +72,7 @@ export class AuthService {
     return {
       message: 'Login successful',
       ...tokens,
-      expires_in: 900, // 15 minutes in seconds
+      expires_in: 30, // 30 seconds
       id: user.id,
       email: user.email,
       role: user.role ,
@@ -131,7 +131,7 @@ export class AuthService {
     return {
       message: 'Token refreshed successfully',
       ...tokens,
-      expires_in: 900, // 15 minutes in seconds
+      expires_in: 30, // 30 seconds
       id: user.id,
       email: user.email,
     };
